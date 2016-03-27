@@ -1,53 +1,253 @@
-#include <windows.h>		// Header File For Windows
-#include <gl\gl.h>			// Header File For The OpenGL32 Library
-#include <gl\glu.h>			// Header File For The GLu32 Library
-//#include <gl\glaux.h>		// Header File For The Glaux Library
+#include <windows.h>          // Header File For Windows
+#include <stdio.h>            // Header File For Standard Input/Output ( ADD )
+#include <gl\gl.h>            // Header File For The OpenGL32 Library
+#include <gl\glu.h>           // Header File For The GLu32 Library
+//#include <gl\glaux.h>         // Header File For The GLaux Library
 
-HDC			hDC = NULL;		// Private GDI Device Context
-HGLRC		hRC = NULL;		// Permanent Rendering Context
-HWND		hWnd = NULL;		// Holds Our Window Handle
-HINSTANCE	hInstance;		// Holds The Instance Of The Application
+#include <fstream>
+#include <vector>
 
-bool	keys[256];			// Array Used For The Keyboard Routine
-bool	active = TRUE;		// Window Active Flag Set To TRUE By Default
-bool	fullscreen = TRUE;	// Fullscreen Flag Set To Fullscreen Mode By Default
+#define MAX_PARTICLES   1000        // Number Of Particles To Create ( NEW )
 
-LRESULT	CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);	// Declaration For WndProc
+HDC     hDC = NULL;       // Private GDI Device Context
+HGLRC       hRC = NULL;       // Permanent Rendering Context
+HWND        hWnd = NULL;      // Holds Our Window Handle
+HINSTANCE   hInstance;      // Holds The Instance Of The Application
 
-GLvoid ReSizeGLScene(GLsizei width, GLsizei height)		// Resize And Initialize The GL Window
+bool    keys[256];          // Array Used For The Keyboard Routine
+bool    active = TRUE;            // Window Active Flag Set To TRUE By Default
+bool    fullscreen = TRUE;        // Fullscreen Flag Set To Fullscreen Mode By Default
+bool    rainbow = true;           // Rainbow Mode?    ( ADD )
+bool    sp;             // Spacebar Pressed?    ( ADD )
+bool    rp;             // Return Key Pressed?  ( ADD )
+float   slowdown = 2.0f;          // Slow Down Particles
+float   xspeed;             // Base X Speed (To Allow Keyboard Direction Of Tail)
+float   yspeed;             // Base Y Speed (To Allow Keyboard Direction Of Tail)
+float   zoom = -40.0f;            // Used To Zoom Out
+GLuint  loop;               // Misc Loop Variable
+GLuint  col;                // Current Color Selection
+GLuint  delay;              // Rainbow Effect Delay
+GLuint  texture[1];         // Storage For Our Particle Texture
+
+typedef struct                      // Create A Structure For Particle
 {
-	if (height == 0)										// Prevent A Divide By Zero By
+	bool    active;                 // Active (Yes/No)
+	float   life;                   // Particle Life
+	float   fade;                   // Fade Speed
+	float   r;                  // Red Value
+	float   g;                  // Green Value
+	float   b;                  // Blue Value
+	float   x;                  // X Position
+	float   y;                  // Y Position
+	float   z;                  // Z Position
+	float   xi;                 // X Direction
+	float   yi;                 // Y Direction
+	float   zi;                 // Z Direction
+	float   xg;                 // X Gravity
+	float   yg;                 // Y Gravity
+	float   zg;                 // Z Gravity
+}
+particles;                      // Particles Structure
+
+particles particle[MAX_PARTICLES];          // Particle Array (Room For Particle Info)
+
+static GLfloat colors[12][3] =               // Rainbow Of Colors
+{
+	{ 1.0f,0.5f,0.5f },{ 1.0f,0.75f,0.5f },{ 1.0f,1.0f,0.5f },{ 0.75f,1.0f,0.5f },
+	{ 0.5f,1.0f,0.5f },{ 0.5f,1.0f,0.75f },{ 0.5f,1.0f,1.0f },{ 0.5f,0.75f,1.0f },
+	{ 0.5f,0.5f,1.0f },{ 0.75f,0.5f,1.0f },{ 1.0f,0.5f,1.0f },{ 1.0f,0.5f,0.75f }
+};
+
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);   // Declaration For WndProc
+
+bool LoadBMP(const char* FilePath, std::vector<unsigned char> &Pixels)
+{
+	int width = 0;
+	int height = 0;
+	short BitsPerPixel = 0;
+
+	std::fstream hFile(FilePath, std::ios::in | std::ios::binary);
+	if (!hFile.is_open())
+		return false;
+
+	hFile.seekg(0, std::ios::end);
+	int Length = hFile.tellg();
+	hFile.seekg(0, std::ios::beg);
+	std::vector<std::uint8_t> FileInfo(Length);
+	hFile.read(reinterpret_cast<char*>(FileInfo.data()), 54);
+
+	if (FileInfo[0] != 'B' && FileInfo[1] != 'M')
 	{
-		height = 1;										// Making Height Equal One
+		hFile.close();
+		return false;
 	}
 
-	glViewport(0, 0, width, height);						// Reset The Current Viewport
+	if (FileInfo[28] != 24 && FileInfo[28] != 32)
+	{
+		hFile.close();
+		return false;
+	}
 
-	glMatrixMode(GL_PROJECTION);						// Select The Projection Matrix
-	glLoadIdentity();									// Reset The Projection Matrix
+	BitsPerPixel = FileInfo[28];
+	width = FileInfo[18] + (FileInfo[19] << 8);
+	height = FileInfo[22] + (FileInfo[23] << 8);
+	std::uint32_t PixelsOffset = FileInfo[10] + (FileInfo[11] << 8);
+	std::uint32_t size = ((width * BitsPerPixel + 31) / 32) * 4 * height;
+	Pixels.resize(size);
 
-														// Calculate The Aspect Ratio Of The Window
-	gluPerspective(45.0f, (GLfloat)width / (GLfloat)height, 0.1f, 100.0f);
+	hFile.seekg(PixelsOffset, std::ios::beg);
+	hFile.read(reinterpret_cast<char*>(Pixels.data()), size);
+	hFile.close();
 
-	glMatrixMode(GL_MODELVIEW);							// Select The Modelview Matrix
-	glLoadIdentity();									// Reset The Modelview Matrix
+	return true;
 }
 
-int InitGL(GLvoid)										// All Setup For OpenGL Goes Here
+int LoadGLTextures() // Load Bitmaps And Convert To Textures
 {
-	glShadeModel(GL_SMOOTH);							// Enable Smooth Shading
-	glClearColor(0.0f, 0.0f, 0.0f, 0.5f);				// Black Background
-	glClearDepth(1.0f);									// Depth Buffer Setup
-	glEnable(GL_DEPTH_TEST);							// Enables Depth Testing
-	glDepthFunc(GL_LEQUAL);								// The Type Of Depth Testing To Do
-	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	// Really Nice Perspective Calculations
+	int Status = FALSE; // Status Indicator
+	std::vector<unsigned char> Pixels;
+	if (LoadBMP("Particle.bmp",Pixels)) // Load Particle Texture
+	{
+		Status = TRUE; // Set The Status To TRUE
+		glGenTextures(1, &texture[0]); // Create One Textures
+
+		glBindTexture(GL_TEXTURE_2D, texture[0]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexImage2D(GL_TEXTURE_2D, 0, 3, 32, 32, 0, GL_RGB, GL_UNSIGNED_BYTE, Pixels.data());
+	}
+
+	/*if (TextureImage[0]) // If Texture Exists
+	{
+		if (TextureImage[0]->data) // If Texture Image Exists
+		{
+			free(TextureImage[0]->data); // Free The Texture Image Memory
+		}
+		free(TextureImage[0]);  // Free The Image Structure
+	}*/
+	return Status; // Return The Status
+}
+
+GLvoid ReSizeGLScene(GLsizei width, GLsizei height) // Resize And Initialize The GL Window
+{
+	if (height == 0) // Prevent A Divide By Zero By
+	{
+		height = 1; // Making Height Equal One
+	}
+
+	glViewport(0, 0, width, height); // Reset The Current Viewport
+
+	glMatrixMode(GL_PROJECTION); // Select The Projection Matrix
+	glLoadIdentity(); // Reset The Projection Matrix
+
+	// Calculate The Aspect Ratio Of The Window
+	gluPerspective(45.0f, (GLfloat)width / (GLfloat)height, 0.1f, 200.0f);
+
+		glMatrixMode(GL_MODELVIEW); // Select The Modelview Matrix
+	glLoadIdentity(); // Reset The Modelview Matrix
+}
+
+int InitGL(GLvoid)                              // All Setup For OpenGL Goes Here
+{
+	if (!LoadGLTextures())                          // Jump To Texture Loading Routine
+	{
+		return FALSE;                           // If Texture Didn't Load Return FALSE
+	}
+	glShadeModel(GL_SMOOTH);                        // Enables Smooth Shading
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);                  // Black Background
+	glClearDepth(1.0f);                         // Depth Buffer Setup
+	glDisable(GL_DEPTH_TEST);                       // Disables Depth Testing
+	glEnable(GL_BLEND);                         // Enable Blending
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);                   // Type Of Blending To Perform
+	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);           // Really Nice Perspective Calculations
+	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);                 // Really Nice Point Smoothing
+	glEnable(GL_TEXTURE_2D);                        // Enable Texture Mapping
+	glBindTexture(GL_TEXTURE_2D, texture[0]);                // Select Our Texture
+
+	for (loop = 0;loop < MAX_PARTICLES;loop++)                   // Initialize All The Textures
+	{
+		particle[loop].active = true;                 // Make All The Particles Active
+		particle[loop].life = 1.0f;                   // Give All The Particles Full Life
+		particle[loop].fade = float(rand() % 100) / 1000.0f + 0.003f;       // Random Fade Speed
+		particle[loop].r = colors[loop*(12 / MAX_PARTICLES)][0];        // Select Red Rainbow Color
+		particle[loop].g = colors[loop*(12 / MAX_PARTICLES)][1];        // Select Red Rainbow Color
+		particle[loop].b = colors[loop*(12 / MAX_PARTICLES)][2];        // Select Red Rainbow Color
+		particle[loop].xi = float((rand() % 50) - 26.0f)*10.0f;       // Random Speed On X Axis
+		particle[loop].yi = float((rand() % 50) - 25.0f)*10.0f;       // Random Speed On Y Axis
+		particle[loop].zi = float((rand() % 50) - 25.0f)*10.0f;       // Random Speed On Z Axis
+		particle[loop].xg = 0.0f;                     // Set Horizontal Pull To Zero
+		particle[loop].yg = -0.8f;                    // Set Vertical Pull Downward
+		particle[loop].zg = 0.0f;                     // Set Pull On Z Axis To Zero
+	}
 	return TRUE;										// Initialization Went OK
 }
 
-int DrawGLScene(GLvoid)									// Here's Where We Do All The Drawing
+int DrawGLScene(GLvoid)                             // Where We Do All The Drawing
 {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	// Clear Screen And Depth Buffer
-	glLoadIdentity();									// Reset The Current Modelview Matrix
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);         // Clear Screen And Depth Buffer
+	glLoadIdentity();                           // Reset The ModelView Matrix									// Reset The Current Modelview Matrix
+
+	for (loop = 0;loop < MAX_PARTICLES;loop++)                   // Loop Through All The Particles
+	{
+		if (particle[loop].active)                  // If The Particle Is Active
+		{
+			float x = particle[loop].x;               // Grab Our Particle X Position
+			float y = particle[loop].y;               // Grab Our Particle Y Position
+			float z = particle[loop].z + zoom;              // Particle Z Pos + Zoom
+			// Draw The Particle Using Our RGB Values, Fade The Particle Based On It's Life
+			glColor4f(particle[loop].r, particle[loop].g, particle[loop].b, particle[loop].life);
+			glBegin(GL_TRIANGLE_STRIP);             // Build Quad From A Triangle Strip
+			glTexCoord2d(1, 1); glVertex3f(x + 0.5f, y + 0.5f, z); // Top Right
+			glTexCoord2d(0, 1); glVertex3f(x - 0.5f, y + 0.5f, z); // Top Left
+			glTexCoord2d(1, 0); glVertex3f(x + 0.5f, y - 0.5f, z); // Bottom Right
+			glTexCoord2d(0, 0); glVertex3f(x - 0.5f, y - 0.5f, z); // Bottom Left
+			glEnd();                        // Done Building Triangle Strip
+
+			particle[loop].x += particle[loop].xi / (slowdown * 1000);    // Move On The X Axis By X Speed
+			particle[loop].y += particle[loop].yi / (slowdown * 1000);    // Move On The Y Axis By Y Speed
+			particle[loop].z += particle[loop].zi / (slowdown * 1000);    // Move On The Z Axis By Z Speed
+
+			particle[loop].xi += particle[loop].xg;           // Take Pull On X Axis Into Account
+			particle[loop].yi += particle[loop].yg;           // Take Pull On Y Axis Into Account
+			particle[loop].zi += particle[loop].zg;           // Take Pull On Z Axis Into Account
+			particle[loop].life -= particle[loop].fade;       // Reduce Particles Life By 'Fade'
+			if (particle[loop].life < 0.0f)                    // If Particle Is Burned Out
+			{
+				particle[loop].life = 1.0f;               // Give It New Life
+				particle[loop].fade = float(rand() % 100) / 1000.0f + 0.003f;   // Random Fade Value
+				particle[loop].x = 0.0f;                  // Center On X Axis
+				particle[loop].y = 0.0f;                  // Center On Y Axis
+				particle[loop].z = 0.0f;                  // Center On Z Axis
+				particle[loop].xi = xspeed + float((rand() % 60) - 32.0f);  // X Axis Speed And Direction
+				particle[loop].yi = yspeed + float((rand() % 60) - 30.0f);  // Y Axis Speed And Direction
+				particle[loop].zi = float((rand() % 60) - 30.0f);     // Z Axis Speed And Direction
+				particle[loop].r = colors[col][0];            // Select Red From Color Table
+				particle[loop].g = colors[col][1];            // Select Green From Color Table
+				particle[loop].b = colors[col][2];            // Select Blue From Color Table
+			}
+			// If Number Pad 8 And Y Gravity Is Less Than 1.5 Increase Pull Upwards
+			if (keys[VK_NUMPAD8] && (particle[loop].yg < 1.5f))
+				particle[loop].yg += 0.01f;
+			// If Number Pad 2 And Y Gravity Is Greater Than - 1.5 Increase Pull Downwards
+			if (keys[VK_NUMPAD2] && (particle[loop].yg > -1.5f))
+				particle[loop].yg -= 0.01f;
+			// If Number Pad 6 And X Gravity Is Less Than 1.5 Increase Pull Right
+			if (keys[VK_NUMPAD6] && (particle[loop].xg < 1.5f))
+				particle[loop].xg += 0.01f;
+			// If Number Pad 4 And X Gravity Is Greater Than -1.5 Increase Pull Left
+			if (keys[VK_NUMPAD4] && (particle[loop].xg > -1.5f))
+				particle[loop].xg -= 0.01f;
+			if (keys[VK_TAB])                       // Tab Key Causes A Burst
+			{
+				particle[loop].x = 0.0f;                  // Center On X Axis
+				particle[loop].y = 0.0f;                  // Center On Y Axis
+				particle[loop].z = 0.0f;                  // Center On Z Axis
+				particle[loop].xi = float((rand() % 50) - 26.0f)*10.0f;   // Random Speed On X Axis
+				particle[loop].yi = float((rand() % 50) - 25.0f)*10.0f;   // Random Speed On Y Axis
+				particle[loop].zi = float((rand() % 50) - 25.0f)*10.0f;   // Random Speed On Z Axis
+			}
+		}
+	}
 	return TRUE;										// Everything Went OK
 }
 
@@ -324,71 +524,110 @@ LRESULT CALLBACK WndProc(HWND	hWnd,			// Handle For This Window
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
-int WINAPI WinMain(HINSTANCE	hInstance,			// Instance
-	HINSTANCE	hPrevInstance,		// Previous Instance
-	LPSTR		lpCmdLine,			// Command Line Parameters
-	int			nCmdShow)			// Window Show State
+int WINAPI WinMain(HINSTANCE   hInstance,          // Instance
+	HINSTANCE   hPrevInstance,          // Previous Instance
+	LPSTR       lpCmdLine,          // Command Line Parameters
+	int     nCmdShow)           // Window Show State
 {
-	MSG		msg;									// Windows Message Structure
-	BOOL	done = FALSE;								// Bool Variable To Exit Loop
+	MSG msg;                            // Windows Message Structure
+	BOOL    done = FALSE;                     // Bool Variable To Exit Loop
 
-														// Ask The User Which Screen Mode They Prefer
+											  // Ask The User Which Screen Mode They Prefer
 	if (MessageBox(NULL, L"Would You Like To Run In Fullscreen Mode?", L"Start FullScreen?", MB_YESNO | MB_ICONQUESTION) == IDNO)
 	{
-		fullscreen = FALSE;							// Windowed Mode
+		fullscreen = FALSE;                   // Windowed Mode
 	}
 
 	// Create Our OpenGL Window
-	if (!CreateGLWindow(L"NeHe's OpenGL Framework", 640, 480, 16, fullscreen))
+	if (!CreateGLWindow(L"NeHe's Particle Tutorial", 640, 480, 16, fullscreen))
 	{
-		return 0;									// Quit If Window Was Not Created
+		return 0;                       // Quit If Window Was Not Created
 	}
 
-	while (!done)									// Loop That Runs While done=FALSE
+	if (fullscreen)                         // Are We In Fullscreen Mode ( ADD )
 	{
-		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))	// Is There A Message Waiting?
+		slowdown = 1.0f;                      // Speed Up The Particles (3dfx Issue) ( ADD )
+	}
+
+	while (!done)                            // Loop That Runs Until done=TRUE
+	{
+		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))       // Is There A Message Waiting?
 		{
-			if (msg.message == WM_QUIT)				// Have We Received A Quit Message?
+			if (msg.message == WM_QUIT)           // Have We Received A Quit Message?
 			{
-				done = TRUE;							// If So done=TRUE
+				done = TRUE;              // If So done=TRUE
 			}
-			else									// If Not, Deal With Window Messages
+			else                        // If Not, Deal With Window Messages
 			{
-				TranslateMessage(&msg);				// Translate The Message
-				DispatchMessage(&msg);				// Dispatch The Message
+				TranslateMessage(&msg);         // Translate The Message
+				DispatchMessage(&msg);          // Dispatch The Message
 			}
 		}
-		else										// If There Are No Messages
+		else                            // If There Are No Messages
 		{
-			// Draw The Scene.  Watch For ESC Key And Quit Messages From DrawGLScene()
-			if (active)								// Program Active?
+			if ((active && !DrawGLScene()) || keys[VK_ESCAPE])  // Updating View Only If Active
 			{
-				if (keys[VK_ESCAPE])				// Was ESC Pressed?
-				{
-					done = TRUE;						// ESC Signalled A Quit
-				}
-				else								// Not Time To Quit, Update Screen
-				{
-					DrawGLScene();					// Draw The Scene
-					SwapBuffers(hDC);				// Swap Buffers (Double Buffering)
-				}
+				done = TRUE;              // ESC or DrawGLScene Signalled A Quit
 			}
-
-			if (keys[VK_F1])						// Is F1 Being Pressed?
+			else                        // Not Time To Quit, Update Screen
 			{
-				keys[VK_F1] = FALSE;					// If So Make Key FALSE
-				KillGLWindow();						// Kill Our Current Window
-				fullscreen = !fullscreen;				// Toggle Fullscreen / Windowed Mode
-														// Recreate Our OpenGL Window
-				if (!CreateGLWindow(L"NeHe's OpenGL Framework", 640, 480, 16, fullscreen))
+				SwapBuffers(hDC);           // Swap Buffers (Double Buffering)
+				if (keys[VK_ADD] && (slowdown > 1.0f))
+					slowdown -= 0.01f;        // Speed Up Particles
+				if (keys[VK_SUBTRACT] && (slowdown < 4.0f))
+					slowdown += 0.01f;   // Slow Down Particles
+				if (keys[VK_PRIOR])
+					zoom += 0.1f;     // Zoom In
+				if (keys[VK_NEXT])
+					zoom -= 0.1f;      // Zoom Out
+				if (keys[VK_RETURN] && !rp)     // Return Key Pressed
 				{
-					return 0;						// Quit If Window Was Not Created
+					rp = true;            // Set Flag Telling Us It's Pressed
+					rainbow = !rainbow;       // Toggle Rainbow Mode On / Off
+				}
+				if (!keys[VK_RETURN])
+					rp = false;     // If Return Is Released Clear Flag
+				if ((keys[' '] && !sp) || (rainbow && (delay>25)))   // Space Or Rainbow Mode
+				{
+					if (keys[' '])
+						rainbow = false;   // If Spacebar Is Pressed Disable Rainbow Mode
+					sp = true;            // Set Flag Telling Us Space Is Pressed
+					delay = 0;            // Reset The Rainbow Color Cycling Delay
+					col++;              // Change The Particle Color
+					if (col > 11) col = 0;       // If Color Is To High Reset It
+				}
+				if (!keys[' '])
+					sp = false;       // If Spacebar Is Released Clear Flag
+									  // If Up Arrow And Y Speed Is Less Than 200 Increase Upward Speed
+				if (keys[VK_UP] && (yspeed < 200))
+					yspeed += 1.0f;
+				// If Down Arrow And Y Speed Is Greater Than -200 Increase Downward Speed
+				if (keys[VK_DOWN] && (yspeed > -200))
+					yspeed -= 1.0f;
+				// If Right Arrow And X Speed Is Less Than 200 Increase Speed To The Right
+				if (keys[VK_RIGHT] && (xspeed < 200))
+					xspeed += 1.0f;
+				// If Left Arrow And X Speed Is Greater Than -200 Increase Speed To The Left
+				if (keys[VK_LEFT] && (xspeed > -200))
+					xspeed -= 1.0f;
+				delay++;            // Increase Rainbow Mode Color Cycling Delay Counter
+
+
+				if (keys[VK_F1])        // Is F1 Being Pressed?
+				{
+					keys[VK_F1] = FALSE;  // If So Make Key FALSE
+					KillGLWindow();     // Kill Our Current Window
+					fullscreen = !fullscreen; // Toggle Fullscreen / Windowed Mode
+											  // Recreate Our OpenGL Window
+					if (!CreateGLWindow(L"NeHe's Particle Tutorial", 640, 480, 16, fullscreen))
+					{
+						return 0;   // Quit If Window Was Not Created
+					}
 				}
 			}
 		}
 	}
-
 	// Shutdown
-	KillGLWindow();									// Kill The Window
-	return (msg.wParam);							// Exit The Program
+	KillGLWindow();                     // Kill The Window
+	return (msg.wParam);                    // Exit The Program
 }
