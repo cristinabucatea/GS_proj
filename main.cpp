@@ -34,9 +34,6 @@ typedef struct                      // Create A Structure For Particle
 	bool    active;                 // Active (Yes/No)
 	float   life;                   // Particle Life
 	float   fade;                   // Fade Speed
-	float   r;                  // Red Value
-	float   g;                  // Green Value
-	float   b;                  // Blue Value
 	float   x;                  // X Position
 	float   y;                  // Y Position
 	float   z;                  // Z Position
@@ -169,14 +166,11 @@ int InitGL(GLvoid)                              // All Setup For OpenGL Goes Her
 		particle[loop].active = true;                 // Make All The Particles Active
 		particle[loop].life = 1.0f;                   // Give All The Particles Full Life
 		particle[loop].fade = float(rand() % 100) / 1000.0f + 0.003f;       // Random Fade Speed
-		particle[loop].r = colors[loop*(12 / MAX_PARTICLES)][0];        // Select Red Rainbow Color
-		particle[loop].g = colors[loop*(12 / MAX_PARTICLES)][1];        // Select Red Rainbow Color
-		particle[loop].b = colors[loop*(12 / MAX_PARTICLES)][2];        // Select Red Rainbow Color
 		particle[loop].xi = float((rand() % 50) - 26.0f)*10.0f;       // Random Speed On X Axis
 		particle[loop].yi = float((rand() % 50) - 25.0f)*10.0f;       // Random Speed On Y Axis
 		particle[loop].zi = float((rand() % 50) - 25.0f)*10.0f;       // Random Speed On Z Axis
 		particle[loop].xg = 0.0f;                     // Set Horizontal Pull To Zero
-		particle[loop].yg = -0.8f;                    // Set Vertical Pull Downward
+		particle[loop].yg = 0.8f;                    // Set Vertical Pull Downward
 		particle[loop].zg = 0.0f;                     // Set Pull On Z Axis To Zero
 	}
 	return TRUE;										// Initialization Went OK
@@ -195,7 +189,6 @@ int DrawGLScene(GLvoid)                             // Where We Do All The Drawi
 			float y = particle[loop].y;               // Grab Our Particle Y Position
 			float z = particle[loop].z + zoom;              // Particle Z Pos + Zoom
 			// Draw The Particle Using Our RGB Values, Fade The Particle Based On It's Life
-			glColor4f(particle[loop].r, particle[loop].g, particle[loop].b, particle[loop].life);
 			glBegin(GL_TRIANGLE_STRIP);             // Build Quad From A Triangle Strip
 			glTexCoord2d(1, 1); glVertex3f(x + 0.5f, y + 0.5f, z); // Top Right
 			glTexCoord2d(0, 1); glVertex3f(x - 0.5f, y + 0.5f, z); // Top Left
@@ -219,23 +212,20 @@ int DrawGLScene(GLvoid)                             // Where We Do All The Drawi
 				particle[loop].y = 0.0f;                  // Center On Y Axis
 				particle[loop].z = 0.0f;                  // Center On Z Axis
 				particle[loop].xi = xspeed + float((rand() % 60) - 32.0f);  // X Axis Speed And Direction
-				particle[loop].yi = yspeed + float((rand() % 60) - 30.0f);  // Y Axis Speed And Direction
-				particle[loop].zi = float((rand() % 60) - 30.0f);     // Z Axis Speed And Direction
-				particle[loop].r = colors[col][0];            // Select Red From Color Table
-				particle[loop].g = colors[col][1];            // Select Green From Color Table
-				particle[loop].b = colors[col][2];            // Select Blue From Color Table
+				particle[loop].yi = yspeed + float((rand() % 60) + 30.0f);  // Y Axis Speed And Direction
+				particle[loop].zi = float((rand() % 60) + 30.0f);     // Z Axis Speed And Direction
 			}
 			// If Number Pad 8 And Y Gravity Is Less Than 1.5 Increase Pull Upwards
-			if (keys[VK_NUMPAD8] && (particle[loop].yg < 1.5f))
+			if (keys[VK_UP] && (particle[loop].yg < 1.5f))
 				particle[loop].yg += 0.01f;
 			// If Number Pad 2 And Y Gravity Is Greater Than - 1.5 Increase Pull Downwards
-			if (keys[VK_NUMPAD2] && (particle[loop].yg > -1.5f))
+			if (keys[VK_DOWN] && (particle[loop].yg > -1.5f))
 				particle[loop].yg -= 0.01f;
 			// If Number Pad 6 And X Gravity Is Less Than 1.5 Increase Pull Right
-			if (keys[VK_NUMPAD6] && (particle[loop].xg < 1.5f))
+			if (keys[VK_RIGHT] && (particle[loop].xg < 1.5f))
 				particle[loop].xg += 0.01f;
 			// If Number Pad 4 And X Gravity Is Greater Than -1.5 Increase Pull Left
-			if (keys[VK_NUMPAD4] && (particle[loop].xg > -1.5f))
+			if (keys[VK_LEFT] && (particle[loop].xg > -1.5f))
 				particle[loop].xg -= 0.01f;
 			if (keys[VK_TAB])                       // Tab Key Causes A Burst
 			{
@@ -253,12 +243,6 @@ int DrawGLScene(GLvoid)                             // Where We Do All The Drawi
 
 GLvoid KillGLWindow(GLvoid)								// Properly Kill The Window
 {
-	if (fullscreen)										// Are We In Fullscreen Mode?
-	{
-		ChangeDisplaySettings(NULL, 0);					// If So Switch Back To The Desktop
-		ShowCursor(TRUE);								// Show Mouse Pointer
-	}
-
 	if (hRC)											// Do We Have A Rendering Context?
 	{
 		if (!wglMakeCurrent(NULL, NULL))					// Are We Able To Release The DC And RC Contexts?
@@ -310,9 +294,7 @@ BOOL CreateGLWindow(LPCWSTR title, int width, int height, int bits, bool fullscr
 	WindowRect.right = (long)width;		// Set Right Value To Requested Width
 	WindowRect.top = (long)0;				// Set Top Value To 0
 	WindowRect.bottom = (long)height;		// Set Bottom Value To Requested Height
-
-	fullscreen = fullscreenflag;			// Set The Global Fullscreen Flag
-
+	
 	hInstance = GetModuleHandle(NULL);				// Grab An Instance For Our Window
 	wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;	// Redraw On Size, And Own DC For Window.
 	wc.lpfnWndProc = (WNDPROC)WndProc;					// WndProc Handles Messages
@@ -331,44 +313,9 @@ BOOL CreateGLWindow(LPCWSTR title, int width, int height, int bits, bool fullscr
 		return FALSE;											// Return FALSE
 	}
 
-	if (fullscreen)												// Attempt Fullscreen Mode?
-	{
-		DEVMODE dmScreenSettings;								// Device Mode
-		memset(&dmScreenSettings, 0, sizeof(dmScreenSettings));	// Makes Sure Memory's Cleared
-		dmScreenSettings.dmSize = sizeof(dmScreenSettings);		// Size Of The Devmode Structure
-		dmScreenSettings.dmPelsWidth = width;				// Selected Screen Width
-		dmScreenSettings.dmPelsHeight = height;				// Selected Screen Height
-		dmScreenSettings.dmBitsPerPel = bits;					// Selected Bits Per Pixel
-		dmScreenSettings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
 
-		// Try To Set Selected Mode And Get Results.  NOTE: CDS_FULLSCREEN Gets Rid Of Start Bar.
-		if (ChangeDisplaySettings(&dmScreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL)
-		{
-			// If The Mode Fails, Offer Two Options.  Quit Or Use Windowed Mode.
-			if (MessageBox(NULL, L"The Requested Fullscreen Mode Is Not Supported By\nYour Video Card. Use Windowed Mode Instead?", L"NeHe GL", MB_YESNO | MB_ICONEXCLAMATION) == IDYES)
-			{
-				fullscreen = FALSE;		// Windowed Mode Selected.  Fullscreen = FALSE
-			}
-			else
-			{
-				// Pop Up A Message Box Letting User Know The Program Is Closing.
-				MessageBox(NULL, L"Program Will Now Close.", L"ERROR", MB_OK | MB_ICONSTOP);
-				return FALSE;									// Return FALSE
-			}
-		}
-	}
-
-	if (fullscreen)												// Are We Still In Fullscreen Mode?
-	{
-		dwExStyle = WS_EX_APPWINDOW;								// Window Extended Style
-		dwStyle = WS_POPUP;										// Windows Style
-		ShowCursor(FALSE);										// Hide Mouse Pointer
-	}
-	else
-	{
 		dwExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;			// Window Extended Style
 		dwStyle = WS_OVERLAPPEDWINDOW;							// Windows Style
-	}
 
 	AdjustWindowRectEx(&WindowRect, dwStyle, FALSE, dwExStyle);		// Adjust Window To True Requested Size
 																		// Create The Window
@@ -532,21 +479,12 @@ int WINAPI WinMain(HINSTANCE   hInstance,          // Instance
 	MSG msg;                            // Windows Message Structure
 	BOOL    done = FALSE;                     // Bool Variable To Exit Loop
 
-											  // Ask The User Which Screen Mode They Prefer
-	if (MessageBox(NULL, L"Would You Like To Run In Fullscreen Mode?", L"Start FullScreen?", MB_YESNO | MB_ICONQUESTION) == IDNO)
-	{
-		fullscreen = FALSE;                   // Windowed Mode
-	}
+	fullscreen = FALSE;        
 
 	// Create Our OpenGL Window
 	if (!CreateGLWindow(L"NeHe's Particle Tutorial", 640, 480, 16, fullscreen))
 	{
 		return 0;                       // Quit If Window Was Not Created
-	}
-
-	if (fullscreen)                         // Are We In Fullscreen Mode ( ADD )
-	{
-		slowdown = 1.0f;                      // Speed Up The Particles (3dfx Issue) ( ADD )
 	}
 
 	while (!done)                            // Loop That Runs Until done=TRUE
@@ -611,19 +549,6 @@ int WINAPI WinMain(HINSTANCE   hInstance,          // Instance
 				if (keys[VK_LEFT] && (xspeed > -200))
 					xspeed -= 1.0f;
 				delay++;            // Increase Rainbow Mode Color Cycling Delay Counter
-
-
-				if (keys[VK_F1])        // Is F1 Being Pressed?
-				{
-					keys[VK_F1] = FALSE;  // If So Make Key FALSE
-					KillGLWindow();     // Kill Our Current Window
-					fullscreen = !fullscreen; // Toggle Fullscreen / Windowed Mode
-											  // Recreate Our OpenGL Window
-					if (!CreateGLWindow(L"NeHe's Particle Tutorial", 640, 480, 16, fullscreen))
-					{
-						return 0;   // Quit If Window Was Not Created
-					}
-				}
 			}
 		}
 	}
