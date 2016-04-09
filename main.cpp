@@ -2,12 +2,11 @@
 #include <stdio.h>            // Header File For Standard Input/Output ( ADD )
 #include <gl\gl.h>            // Header File For The OpenGL32 Library
 #include <gl\glu.h>           // Header File For The GLu32 Library
-//#include <gl\glaux.h>         // Header File For The GLaux Library
 
 #include <fstream>
 #include <vector>
 
-#define MAX_PARTICLES   1000        // Number Of Particles To Create ( NEW )
+#define MAX_PARTICLES   5000        // Number Of Particles To Create ( NEW )
 
 HDC     hDC = NULL;       // Private GDI Device Context
 HGLRC       hRC = NULL;       // Permanent Rendering Context
@@ -17,16 +16,9 @@ HINSTANCE   hInstance;      // Holds The Instance Of The Application
 bool    keys[256];          // Array Used For The Keyboard Routine
 bool    active = TRUE;            // Window Active Flag Set To TRUE By Default
 bool    fullscreen = TRUE;        // Fullscreen Flag Set To Fullscreen Mode By Default
-bool    rainbow = true;           // Rainbow Mode?    ( ADD )
-bool    sp;             // Spacebar Pressed?    ( ADD )
-bool    rp;             // Return Key Pressed?  ( ADD )
-float   slowdown = 2.0f;          // Slow Down Particles
-float   xspeed;             // Base X Speed (To Allow Keyboard Direction Of Tail)
-float   yspeed;             // Base Y Speed (To Allow Keyboard Direction Of Tail)
-float   zoom = -40.0f;            // Used To Zoom Out
+float   slowdown = 10.0f;          // Slow Down Particles
+float   zoom = -30.0f;            // Used To Zoom Out
 GLuint  loop;               // Misc Loop Variable
-GLuint  col;                // Current Color Selection
-GLuint  delay;              // Rainbow Effect Delay
 GLuint  texture[1];         // Storage For Our Particle Texture
 
 typedef struct                      // Create A Structure For Particle
@@ -40,20 +32,15 @@ typedef struct                      // Create A Structure For Particle
 	float   xi;                 // X Direction
 	float   yi;                 // Y Direction
 	float   zi;                 // Z Direction
-	float   xg;                 // X Gravity
-	float   yg;                 // Y Gravity
-	float   zg;                 // Z Gravity
+	float   r;                  // Red Value
+	float   g;                  // Green Value
+	float   b;                  // Blue Value
+
 }
 particles;                      // Particles Structure
 
 particles particle[MAX_PARTICLES];          // Particle Array (Room For Particle Info)
-
-static GLfloat colors[12][3] =               // Rainbow Of Colors
-{
-	{ 1.0f,0.5f,0.5f },{ 1.0f,0.75f,0.5f },{ 1.0f,1.0f,0.5f },{ 0.75f,1.0f,0.5f },
-	{ 0.5f,1.0f,0.5f },{ 0.5f,1.0f,0.75f },{ 0.5f,1.0f,1.0f },{ 0.5f,0.75f,1.0f },
-	{ 0.5f,0.5f,1.0f },{ 0.75f,0.5f,1.0f },{ 1.0f,0.5f,1.0f },{ 1.0f,0.5f,0.75f }
-};
+static GLfloat color[3] = { 49.0f, 79.0f, 79.0f };
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);   // Declaration For WndProc
 
@@ -114,14 +101,6 @@ int LoadGLTextures() // Load Bitmaps And Convert To Textures
 		glTexImage2D(GL_TEXTURE_2D, 0, 3, 32, 32, 0, GL_RGB, GL_UNSIGNED_BYTE, Pixels.data());
 	}
 
-	/*if (TextureImage[0]) // If Texture Exists
-	{
-		if (TextureImage[0]->data) // If Texture Image Exists
-		{
-			free(TextureImage[0]->data); // Free The Texture Image Memory
-		}
-		free(TextureImage[0]);  // Free The Image Structure
-	}*/
 	return Status; // Return The Status
 }
 
@@ -164,14 +143,17 @@ int InitGL(GLvoid)                              // All Setup For OpenGL Goes Her
 	for (loop = 0;loop < MAX_PARTICLES;loop++)                   // Initialize All The Textures
 	{
 		particle[loop].active = true;                 // Make All The Particles Active
-		particle[loop].life = 1.0f;                   // Give All The Particles Full Life
-		particle[loop].fade = float(rand() % 100) / 1000.0f + 0.003f;       // Random Fade Speed
-		particle[loop].xi = float((rand() % 50) - 26.0f)*10.0f;       // Random Speed On X Axis
-		particle[loop].yi = float((rand() % 50) - 25.0f)*10.0f;       // Random Speed On Y Axis
-		particle[loop].zi = float((rand() % 50) - 25.0f)*10.0f;       // Random Speed On Z Axis
-		particle[loop].xg = 0.0f;                     // Set Horizontal Pull To Zero
-		particle[loop].yg = 0.8f;                    // Set Vertical Pull Downward
-		particle[loop].zg = 0.0f;                     // Set Pull On Z Axis To Zero
+		particle[loop].life = 1.0f;                   // Give All The Particles Life
+		particle[loop].fade = float(rand() % 100) / 1000.0f + 0.001f;       // Random Fade Speed
+		particle[loop].r = color[0];        
+		particle[loop].g = color[1];        
+		particle[loop].b = color[2];    
+		particle[loop].x = 0.0f;                  // Center On X Axis
+		particle[loop].y = 0.0f;                  // Center On Y Axis
+		particle[loop].z = 0.0f;                  // Center On Z Axis
+		particle[loop].xi = 0.0f;       // Random Speed On X Axis
+		particle[loop].yi = 0.0f;       // Random Speed On Y Axis
+		particle[loop].zi = 0.0f;       // Random Speed On Z Axis
 	}
 	return TRUE;										// Initialization Went OK
 }
@@ -189,52 +171,33 @@ int DrawGLScene(GLvoid)                             // Where We Do All The Drawi
 			float y = particle[loop].y;               // Grab Our Particle Y Position
 			float z = particle[loop].z + zoom;              // Particle Z Pos + Zoom
 			// Draw The Particle Using Our RGB Values, Fade The Particle Based On It's Life
+			glColor4f(particle[loop].r, particle[loop].g, particle[loop].b, particle[loop].life);
 			glBegin(GL_TRIANGLE_STRIP);             // Build Quad From A Triangle Strip
-			glTexCoord2d(1, 1); glVertex3f(x + 0.5f, y + 0.5f, z); // Top Right
-			glTexCoord2d(0, 1); glVertex3f(x - 0.5f, y + 0.5f, z); // Top Left
-			glTexCoord2d(1, 0); glVertex3f(x + 0.5f, y - 0.5f, z); // Bottom Right
-			glTexCoord2d(0, 0); glVertex3f(x - 0.5f, y - 0.5f, z); // Bottom Left
+			glTexCoord2d(1, 1); 
+			glVertex3f(x + 0.5f, y + 0.5f, z); // Top Right
+			glTexCoord2d(0, 1); 
+			glVertex3f(x - 0.5f, y + 0.5f, z); // Top Left
+			glTexCoord2d(1, 0); 
+			glVertex3f(x + 0.5f, y - 0.5f, z); // Bottom Right
+			glTexCoord2d(0, 0);
+			glVertex3f(x - 0.5f, y - 0.5f, z); // Bottom Left
 			glEnd();                        // Done Building Triangle Strip
 
-			particle[loop].x += particle[loop].xi / (slowdown * 1000);    // Move On The X Axis By X Speed
-			particle[loop].y += particle[loop].yi / (slowdown * 1000);    // Move On The Y Axis By Y Speed
-			particle[loop].z += particle[loop].zi / (slowdown * 1000);    // Move On The Z Axis By Z Speed
-
-			particle[loop].xi += particle[loop].xg;           // Take Pull On X Axis Into Account
-			particle[loop].yi += particle[loop].yg;           // Take Pull On Y Axis Into Account
-			particle[loop].zi += particle[loop].zg;           // Take Pull On Z Axis Into Account
+				particle[loop].x += particle[loop].xi / (slowdown * 800);    // Move On The X Axis By X Speed
+				particle[loop].y += particle[loop].yi / (slowdown * 800);    // Move On The Y Axis By Y Speed
+				particle[loop].z += particle[loop].zi / (slowdown * 800);    // Move On The Z Axis By Z Speed
+			
 			particle[loop].life -= particle[loop].fade;       // Reduce Particles Life By 'Fade'
 			if (particle[loop].life < 0.0f)                    // If Particle Is Burned Out
 			{
 				particle[loop].life = 1.0f;               // Give It New Life
-				particle[loop].fade = float(rand() % 100) / 1000.0f + 0.003f;   // Random Fade Value
+				particle[loop].fade = float(rand() % 100) / 1000.0f + 0.001f;   // Random Fade Value
 				particle[loop].x = 0.0f;                  // Center On X Axis
 				particle[loop].y = 0.0f;                  // Center On Y Axis
 				particle[loop].z = 0.0f;                  // Center On Z Axis
-				particle[loop].xi = xspeed + float((rand() % 60) - 32.0f);  // X Axis Speed And Direction
-				particle[loop].yi = yspeed + float((rand() % 60) + 30.0f);  // Y Axis Speed And Direction
+				particle[loop].xi = float((rand() % 60) - 30.0f);  // X Axis Speed And Direction
+				particle[loop].yi = float((rand() % 60) + 30.0f);  // Y Axis Speed And Direction
 				particle[loop].zi = float((rand() % 60) + 30.0f);     // Z Axis Speed And Direction
-			}
-			// If Number Pad 8 And Y Gravity Is Less Than 1.5 Increase Pull Upwards
-			if (keys[VK_UP] && (particle[loop].yg < 1.5f))
-				particle[loop].yg += 0.01f;
-			// If Number Pad 2 And Y Gravity Is Greater Than - 1.5 Increase Pull Downwards
-			if (keys[VK_DOWN] && (particle[loop].yg > -1.5f))
-				particle[loop].yg -= 0.01f;
-			// If Number Pad 6 And X Gravity Is Less Than 1.5 Increase Pull Right
-			if (keys[VK_RIGHT] && (particle[loop].xg < 1.5f))
-				particle[loop].xg += 0.01f;
-			// If Number Pad 4 And X Gravity Is Greater Than -1.5 Increase Pull Left
-			if (keys[VK_LEFT] && (particle[loop].xg > -1.5f))
-				particle[loop].xg -= 0.01f;
-			if (keys[VK_TAB])                       // Tab Key Causes A Burst
-			{
-				particle[loop].x = 0.0f;                  // Center On X Axis
-				particle[loop].y = 0.0f;                  // Center On Y Axis
-				particle[loop].z = 0.0f;                  // Center On Z Axis
-				particle[loop].xi = float((rand() % 50) - 26.0f)*10.0f;   // Random Speed On X Axis
-				particle[loop].yi = float((rand() % 50) - 25.0f)*10.0f;   // Random Speed On Y Axis
-				particle[loop].zi = float((rand() % 50) - 25.0f)*10.0f;   // Random Speed On Z Axis
 			}
 		}
 	}
@@ -518,37 +481,6 @@ int WINAPI WinMain(HINSTANCE   hInstance,          // Instance
 					zoom += 0.1f;     // Zoom In
 				if (keys[VK_NEXT])
 					zoom -= 0.1f;      // Zoom Out
-				if (keys[VK_RETURN] && !rp)     // Return Key Pressed
-				{
-					rp = true;            // Set Flag Telling Us It's Pressed
-					rainbow = !rainbow;       // Toggle Rainbow Mode On / Off
-				}
-				if (!keys[VK_RETURN])
-					rp = false;     // If Return Is Released Clear Flag
-				if ((keys[' '] && !sp) || (rainbow && (delay>25)))   // Space Or Rainbow Mode
-				{
-					if (keys[' '])
-						rainbow = false;   // If Spacebar Is Pressed Disable Rainbow Mode
-					sp = true;            // Set Flag Telling Us Space Is Pressed
-					delay = 0;            // Reset The Rainbow Color Cycling Delay
-					col++;              // Change The Particle Color
-					if (col > 11) col = 0;       // If Color Is To High Reset It
-				}
-				if (!keys[' '])
-					sp = false;       // If Spacebar Is Released Clear Flag
-									  // If Up Arrow And Y Speed Is Less Than 200 Increase Upward Speed
-				if (keys[VK_UP] && (yspeed < 200))
-					yspeed += 1.0f;
-				// If Down Arrow And Y Speed Is Greater Than -200 Increase Downward Speed
-				if (keys[VK_DOWN] && (yspeed > -200))
-					yspeed -= 1.0f;
-				// If Right Arrow And X Speed Is Less Than 200 Increase Speed To The Right
-				if (keys[VK_RIGHT] && (xspeed < 200))
-					xspeed += 1.0f;
-				// If Left Arrow And X Speed Is Greater Than -200 Increase Speed To The Left
-				if (keys[VK_LEFT] && (xspeed > -200))
-					xspeed -= 1.0f;
-				delay++;            // Increase Rainbow Mode Color Cycling Delay Counter
 			}
 		}
 	}
