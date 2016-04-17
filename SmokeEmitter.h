@@ -48,4 +48,5 @@ private:
 	float m_coordX;
 	float m_coordY;
 	float m_coordZ;
+	int m_nrParticles;
 };

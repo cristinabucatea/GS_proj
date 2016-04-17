@@ -1,4 +1,4 @@
-#include "SmokeEmitter.h"
+#include "gs/SmokeEmitter.h"
 
 HDC     hDC = NULL;       // Private GDI Device Context
 HGLRC       hRC = NULL;       // Permanent Rendering Context
@@ -9,7 +9,7 @@ bool    keys[256];          // Array Used For The Keyboard Routine
 bool    active = TRUE;            // Window Active Flag Set To TRUE By Default
 bool    fullscreen = TRUE;        // Fullscreen Flag Set To Fullscreen Mode By Default
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);   // Declaration For WndProc
-SmokeEmitter* smokeEmitter = nullptr;
+std::vector<SmokeEmitter*> smokeEmitters;
 
 
 GLvoid ReSizeGLScene(GLsizei width, GLsizei height) // Resize And Initialize The GL Window
@@ -33,8 +33,12 @@ GLvoid ReSizeGLScene(GLsizei width, GLsizei height) // Resize And Initialize The
 
 int InitGL(GLvoid)                              // All Setup For OpenGL Goes Here
 {
-	smokeEmitter = new SmokeEmitter(5000, 0.0f, 5.0f, 0.0f);
-	if (!smokeEmitter->LoadedGLTextures())                          // Jump To Texture Loading Routine
+	smokeEmitters.push_back(new SmokeEmitter(5000, 5.0f, 5.0f, 0.0f));
+	smokeEmitters.push_back(new SmokeEmitter(5000, -5.0f, 5.0f, 0.0f));
+	smokeEmitters.push_back(new SmokeEmitter(5000, 0.0f, -5.0f, 0.0f));
+
+	for (int i = 0; i < smokeEmitters.size(); ++i)
+	if (!smokeEmitters[i]->LoadedGLTextures())                          // Jump To Texture Loading Routine
 	{
 		return FALSE;                           // If Texture Didn't Load Return FALSE
 	}
@@ -52,8 +56,9 @@ int InitGL(GLvoid)                              // All Setup For OpenGL Goes Her
 int DrawGLScene(GLvoid)                             // Where We Do All The Drawing
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);         // Clear Screen And Depth Buffer
-	glLoadIdentity();    
-	smokeEmitter->DrawParticles();
+	glLoadIdentity();
+	for (int i = 0; i < smokeEmitters.size(); ++i)
+		smokeEmitters[i]->DrawParticles();
 	return TRUE;										// Everything Went OK
 }
 

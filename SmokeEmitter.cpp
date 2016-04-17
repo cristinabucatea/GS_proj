@@ -1,7 +1,7 @@
 #include "SmokeEmitter.h"
 
 SmokeEmitter::SmokeEmitter(int nr, float x = 0, float y = 0, float z = 0) :
-	m_coordX(x), m_coordY(y), m_coordZ(z)
+	m_nrParticles(nr), m_coordX(x), m_coordY(y), m_coordZ(z)
 {
 	m_loadedTexture = LoadGLTextures();
 	glEnable(GL_TEXTURE_2D);                        // Enable Texture Mapping
@@ -37,7 +37,7 @@ bool SmokeEmitter::LoadedGLTextures()
 void SmokeEmitter::DrawParticles()
 {
 	// Reset The ModelView Matrix									// Reset The Current Modelview Matrix
-	for (int i = 0; i < MAX_PARTICLES; i++)                   // i Through All The Particles
+	for (int i = 0; i < m_nrParticles; i++)                   // i Through All The Particles
 	{
 		if (m_particles[i]->active)                  // If The Particle Is Active
 		{
