@@ -1,12 +1,4 @@
-#include <windows.h>          // Header File For Windows
-#include <stdio.h>            // Header File For Standard Input/Output ( ADD )
-#include <gl\gl.h>            // Header File For The OpenGL32 Library
-#include <gl\glu.h>           // Header File For The GLu32 Library
-
-#include <fstream>
-#include <vector>
-
-#define MAX_PARTICLES   5000        // Number Of Particles To Create ( NEW )
+#include "SmokeEmitter.h"
 
 HDC     hDC = NULL;       // Private GDI Device Context
 HGLRC       hRC = NULL;       // Permanent Rendering Context
@@ -16,93 +8,9 @@ HINSTANCE   hInstance;      // Holds The Instance Of The Application
 bool    keys[256];          // Array Used For The Keyboard Routine
 bool    active = TRUE;            // Window Active Flag Set To TRUE By Default
 bool    fullscreen = TRUE;        // Fullscreen Flag Set To Fullscreen Mode By Default
-float   slowdown = 10.0f;          // Slow Down Particles
-float   zoom = -30.0f;            // Used To Zoom Out
-GLuint  loop;               // Misc Loop Variable
-GLuint  texture[1];         // Storage For Our Particle Texture
-
-typedef struct                      // Create A Structure For Particle
-{
-	bool    active;                 // Active (Yes/No)
-	float   life;                   // Particle Life
-	float   fade;                   // Fade Speed
-	float   x;                  // X Position
-	float   y;                  // Y Position
-	float   z;                  // Z Position
-	float   xi;                 // X Direction
-	float   yi;                 // Y Direction
-	float   zi;                 // Z Direction
-	float   r;                  // Red Value
-	float   g;                  // Green Value
-	float   b;                  // Blue Value
-
-}
-particles;                      // Particles Structure
-
-particles particle[MAX_PARTICLES];          // Particle Array (Room For Particle Info)
-static GLfloat color[3] = { 49.0f, 79.0f, 79.0f };
-
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);   // Declaration For WndProc
+SmokeEmitter* smokeEmitter = nullptr;
 
-bool LoadBMP(const char* FilePath, std::vector<unsigned char> &Pixels)
-{
-	int width = 0;
-	int height = 0;
-	short BitsPerPixel = 0;
-
-	std::fstream hFile(FilePath, std::ios::in | std::ios::binary);
-	if (!hFile.is_open())
-		return false;
-
-	hFile.seekg(0, std::ios::end);
-	int Length = hFile.tellg();
-	hFile.seekg(0, std::ios::beg);
-	std::vector<std::uint8_t> FileInfo(Length);
-	hFile.read(reinterpret_cast<char*>(FileInfo.data()), 54);
-
-	if (FileInfo[0] != 'B' && FileInfo[1] != 'M')
-	{
-		hFile.close();
-		return false;
-	}
-
-	if (FileInfo[28] != 24 && FileInfo[28] != 32)
-	{
-		hFile.close();
-		return false;
-	}
-
-	BitsPerPixel = FileInfo[28];
-	width = FileInfo[18] + (FileInfo[19] << 8);
-	height = FileInfo[22] + (FileInfo[23] << 8);
-	std::uint32_t PixelsOffset = FileInfo[10] + (FileInfo[11] << 8);
-	std::uint32_t size = ((width * BitsPerPixel + 31) / 32) * 4 * height;
-	Pixels.resize(size);
-
-	hFile.seekg(PixelsOffset, std::ios::beg);
-	hFile.read(reinterpret_cast<char*>(Pixels.data()), size);
-	hFile.close();
-
-	return true;
-}
-
-int LoadGLTextures() // Load Bitmaps And Convert To Textures
-{
-	int Status = FALSE; // Status Indicator
-	std::vector<unsigned char> Pixels;
-	if (LoadBMP("Particle.bmp",Pixels)) // Load Particle Texture
-	{
-		Status = TRUE; // Set The Status To TRUE
-		glGenTextures(1, &texture[0]); // Create One Textures
-
-		glBindTexture(GL_TEXTURE_2D, texture[0]);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, 3, 32, 32, 0, GL_RGB, GL_UNSIGNED_BYTE, Pixels.data());
-	}
-
-	return Status; // Return The Status
-}
 
 GLvoid ReSizeGLScene(GLsizei width, GLsizei height) // Resize And Initialize The GL Window
 {
@@ -125,7 +33,8 @@ GLvoid ReSizeGLScene(GLsizei width, GLsizei height) // Resize And Initialize The
 
 int InitGL(GLvoid)                              // All Setup For OpenGL Goes Here
 {
-	if (!LoadGLTextures())                          // Jump To Texture Loading Routine
+	smokeEmitter = new SmokeEmitter(5000, 0.0f, 5.0f, 0.0f);
+	if (!smokeEmitter->LoadedGLTextures())                          // Jump To Texture Loading Routine
 	{
 		return FALSE;                           // If Texture Didn't Load Return FALSE
 	}
@@ -137,70 +46,14 @@ int InitGL(GLvoid)                              // All Setup For OpenGL Goes Her
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);                   // Type Of Blending To Perform
 	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);           // Really Nice Perspective Calculations
 	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);                 // Really Nice Point Smoothing
-	glEnable(GL_TEXTURE_2D);                        // Enable Texture Mapping
-	glBindTexture(GL_TEXTURE_2D, texture[0]);                // Select Our Texture
-
-	for (loop = 0;loop < MAX_PARTICLES;loop++)                   // Initialize All The Textures
-	{
-		particle[loop].active = true;                 // Make All The Particles Active
-		particle[loop].life = 1.0f;                   // Give All The Particles Life
-		particle[loop].fade = float(rand() % 100) / 1000.0f + 0.001f;       // Random Fade Speed
-		particle[loop].r = color[0];        
-		particle[loop].g = color[1];        
-		particle[loop].b = color[2];    
-		particle[loop].x = 0.0f;                  // Center On X Axis
-		particle[loop].y = 0.0f;                  // Center On Y Axis
-		particle[loop].z = 0.0f;                  // Center On Z Axis
-		particle[loop].xi = 0.0f;       // Random Speed On X Axis
-		particle[loop].yi = 0.0f;       // Random Speed On Y Axis
-		particle[loop].zi = 0.0f;       // Random Speed On Z Axis
-	}
 	return TRUE;										// Initialization Went OK
 }
 
 int DrawGLScene(GLvoid)                             // Where We Do All The Drawing
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);         // Clear Screen And Depth Buffer
-	glLoadIdentity();                           // Reset The ModelView Matrix									// Reset The Current Modelview Matrix
-
-	for (loop = 0;loop < MAX_PARTICLES;loop++)                   // Loop Through All The Particles
-	{
-		if (particle[loop].active)                  // If The Particle Is Active
-		{
-			float x = particle[loop].x;               // Grab Our Particle X Position
-			float y = particle[loop].y;               // Grab Our Particle Y Position
-			float z = particle[loop].z + zoom;              // Particle Z Pos + Zoom
-			// Draw The Particle Using Our RGB Values, Fade The Particle Based On It's Life
-			glColor4f(particle[loop].r, particle[loop].g, particle[loop].b, particle[loop].life);
-			glBegin(GL_TRIANGLE_STRIP);             // Build Quad From A Triangle Strip
-			glTexCoord2d(1, 1); 
-			glVertex3f(x + 0.5f, y + 0.5f, z); // Top Right
-			glTexCoord2d(0, 1); 
-			glVertex3f(x - 0.5f, y + 0.5f, z); // Top Left
-			glTexCoord2d(1, 0); 
-			glVertex3f(x + 0.5f, y - 0.5f, z); // Bottom Right
-			glTexCoord2d(0, 0);
-			glVertex3f(x - 0.5f, y - 0.5f, z); // Bottom Left
-			glEnd();                        // Done Building Triangle Strip
-
-				particle[loop].x += particle[loop].xi / (slowdown * 800);    // Move On The X Axis By X Speed
-				particle[loop].y += particle[loop].yi / (slowdown * 800);    // Move On The Y Axis By Y Speed
-				particle[loop].z += particle[loop].zi / (slowdown * 800);    // Move On The Z Axis By Z Speed
-			
-			particle[loop].life -= particle[loop].fade;       // Reduce Particles Life By 'Fade'
-			if (particle[loop].life < 0.0f)                    // If Particle Is Burned Out
-			{
-				particle[loop].life = 1.0f;               // Give It New Life
-				particle[loop].fade = float(rand() % 100) / 1000.0f + 0.001f;   // Random Fade Value
-				particle[loop].x = 0.0f;                  // Center On X Axis
-				particle[loop].y = 0.0f;                  // Center On Y Axis
-				particle[loop].z = 0.0f;                  // Center On Z Axis
-				particle[loop].xi = float((rand() % 60) - 30.0f);  // X Axis Speed And Direction
-				particle[loop].yi = float((rand() % 60) + 30.0f);  // Y Axis Speed And Direction
-				particle[loop].zi = float((rand() % 60) + 30.0f);     // Z Axis Speed And Direction
-			}
-		}
-	}
+	glLoadIdentity();    
+	smokeEmitter->DrawParticles();
 	return TRUE;										// Everything Went OK
 }
 
@@ -473,14 +326,6 @@ int WINAPI WinMain(HINSTANCE   hInstance,          // Instance
 			else                        // Not Time To Quit, Update Screen
 			{
 				SwapBuffers(hDC);           // Swap Buffers (Double Buffering)
-				if (keys[VK_ADD] && (slowdown > 1.0f))
-					slowdown -= 0.01f;        // Speed Up Particles
-				if (keys[VK_SUBTRACT] && (slowdown < 4.0f))
-					slowdown += 0.01f;   // Slow Down Particles
-				if (keys[VK_PRIOR])
-					zoom += 0.1f;     // Zoom In
-				if (keys[VK_NEXT])
-					zoom -= 0.1f;      // Zoom Out
 			}
 		}
 	}
